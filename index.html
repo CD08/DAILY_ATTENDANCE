@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud Attendance: Araya & Aarivya</title>
+    <title>Attendance: Araya & Aarivya</title>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; background: #f4f6f8; display: flex; flex-direction: column; align-items: center; padding: 20px; color: #333; }
         h1 { color: #2c3e50; margin-bottom: 5px; }
@@ -30,26 +30,18 @@
         .btn-nav { background: white; border: 1px solid #ccc; }
         .btn-nav:hover { background: #eee; }
         .btn-sync { background: #2c3e50; color: white; display: flex; align-items: center; gap: 5px; }
-        .btn-save { background: #27ae60; color: white; }
-        
-        /* Cloud Settings Modal */
-        #cloudModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: center; }
-        .modal-content { background: white; padding: 25px; border-radius: 10px; width: 90%; max-width: 400px; }
-        .modal-content input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
-        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
 
         /* Status Bar */
         #syncStatus { font-size: 0.85rem; height: 20px; color: #666; margin-top: 5px; font-weight: bold; }
         .loading { color: #e67e22 !important; }
         .success { color: #27ae60 !important; }
         .error { color: #e74c3c !important; }
-
     </style>
 </head>
 <body>
 
     <h1>Attendance Tracker</h1>
-    <p class="subtitle">Cloud Sync Enabled (Github Gist)</p>
+    <p class="subtitle">Araya & Aarivya</p>
 
     <div class="controls">
         <button class="btn-nav" onclick="changeWeek(-1)">← Prev</button>
@@ -58,209 +50,3 @@
     </div>
 
     <div class="controls">
-        <button class="btn-sync" onclick="openSettings()">⚙️ Cloud Setup</button>
-        <button class="btn-sync" onclick="loadFromCloud()">🔄 Refresh Data</button>
-    </div>
-    <div id="syncStatus"></div>
-
-    <div class="card">
-        <table id="attTable">
-            <thead>
-                <tr id="tHead"><th>Student</th></tr>
-            </thead>
-            <tbody id="tBody"></tbody>
-        </table>
-    </div>
-
-    <div id="cloudModal">
-        <div class="modal-content">
-            <h3>☁️ Connect to GitHub</h3>
-            <p style="font-size:0.8rem; color:#666; margin-bottom:15px;">
-                Enter your Gist ID and Token to sync data across devices.
-            </p>
-            <label style="font-size:0.8rem; font-weight:bold;">Gist ID</label>
-            <input type="text" id="inpGistId" placeholder="e.g. ab123cd45...">
-            
-            <label style="font-size:0.8rem; font-weight:bold;">GitHub Token (PAT)</label>
-            <input type="password" id="inpToken" placeholder="ghp_xxxxxxxxxxxx...">
-            
-            <div class="modal-actions">
-                <button onclick="closeSettings()" style="background:#ccc;">Cancel</button>
-                <button onclick="saveSettings()" class="btn-save">Save & Connect</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // --- CONFIG & STATE ---
-        const students = ["Araya", "Aarivya"];
-        let currentMonday = getMonday(new Date());
-        let attendanceData = {}; // Stores all data: { "Araya-2023-10-25": true }
-        
-        // --- INITIALIZATION ---
-        // Load keys from browser memory
-        let gistId = localStorage.getItem("att_gist_id") || "";
-        let ghToken = localStorage.getItem("att_gh_token") || "";
-
-        // Try to load local data first, then cloud
-        const localData = localStorage.getItem("att_offline_data");
-        if (localData) attendanceData = JSON.parse(localData);
-        
-        renderTable();
-        if(gistId && ghToken) loadFromCloud(); // Auto-sync if configured
-
-        // --- CORE FUNCTIONS ---
-
-        function getMonday(d) {
-            d = new Date(d);
-            const day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1);
-            return new Date(d.setDate(diff));
-        }
-
-        function formatDate(date) {
-            const offset = date.getTimezoneOffset();
-            return new Date(date.getTime() - (offset*60*1000)).toISOString().split('T')[0];
-        }
-
-        function renderTable() {
-            const thead = document.getElementById("tHead");
-            const tbody = document.getElementById("tBody");
-            const label = document.getElementById("weekLabel");
-            const todayKey = formatDate(new Date());
-
-            thead.innerHTML = "<th>Student</th>";
-            tbody.innerHTML = "";
-
-            const weekDates = [];
-            for(let i=0; i<7; i++) {
-                const d = new Date(currentMonday);
-                d.setDate(currentMonday.getDate() + i);
-                weekDates.push(d);
-                
-                const th = document.createElement("th");
-                th.innerText = d.toLocaleDateString('en-US', {weekday:'short', day:'numeric'});
-                if(formatDate(d) === todayKey) th.classList.add("today-col");
-                thead.appendChild(th);
-            }
-            label.innerText = `${weekDates[0].toLocaleDateString()} - ${weekDates[6].toLocaleDateString()}`;
-
-            students.forEach(student => {
-                const tr = document.createElement("tr");
-                const tdName = document.createElement("td");
-                tdName.innerText = student;
-                tr.appendChild(tdName);
-
-                weekDates.forEach(date => {
-                    const td = document.createElement("td");
-                    const dKey = formatDate(date);
-                    const key = `${student}-${dKey}`;
-                    const chk = document.createElement("input");
-                    chk.type = "checkbox";
-
-                    if(attendanceData[key]) chk.checked = true;
-                    if(dKey === todayKey) td.classList.add("today-col");
-
-                    // Locking Logic
-                    if(dKey !== todayKey) {
-                        chk.disabled = true; // Lock past/future
-                    } else if(attendanceData[key]) {
-                        chk.disabled = true; // Lock today if already marked
-                    }
-
-                    chk.onclick = (e) => {
-                        if(confirm(`Mark ${student} Present? This locks instantly.`)) {
-                            attendanceData[key] = true;
-                            // Save to Local + Cloud
-                            localStorage.setItem("att_offline_data", JSON.stringify(attendanceData));
-                            pushToCloud();
-                            renderTable(); // Re-render to lock
-                        } else {
-                            e.preventDefault();
-                        }
-                    };
-                    td.appendChild(td);
-                    td.appendChild(chk);
-                    tr.appendChild(td);
-                });
-                tbody.appendChild(tr);
-            });
-        }
-
-        function changeWeek(dir) {
-            currentMonday.setDate(currentMonday.getDate() + (dir*7));
-            renderTable();
-        }
-
-        // --- CLOUD SYNC LOGIC (GITHUB GIST) ---
-
-        function setStatus(msg, type) {
-            const el = document.getElementById("syncStatus");
-            el.innerText = msg;
-            el.className = type || "";
-        }
-
-        async function loadFromCloud() {
-            if(!gistId || !ghToken) return setStatus("⚠️ Cloud not configured.", "error");
-            setStatus("⌛ Fetching data...", "loading");
-
-            try {
-                const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-                    headers: { "Authorization": `token ${ghToken}` }
-                });
-                if(!res.ok) throw new Error("Failed to load");
-                
-                const json = await res.json();
-                const content = json.files["attendance.json"].content;
-                attendanceData = JSON.parse(content);
-                
-                // Update local cache
-                localStorage.setItem("att_offline_data", JSON.stringify(attendanceData));
-                renderTable();
-                setStatus("✅ Data Synced", "success");
-            } catch (err) {
-                console.error(err);
-                setStatus("❌ Sync Failed. Check ID/Token.", "error");
-            }
-        }
-
-        async function pushToCloud() {
-            if(!gistId || !ghToken) return;
-            setStatus("⌛ Saving to Cloud...", "loading");
-
-            try {
-                await fetch(`https://api.github.com/gists/${gistId}`, {
-                    method: "PATCH",
-                    headers: { 
-                        "Authorization": `token ${ghToken}`,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        files: { "attendance.json": { content: JSON.stringify(attendanceData) } }
-                    })
-                });
-                setStatus("✅ Saved to Cloud", "success");
-            } catch (err) {
-                setStatus("❌ Save Failed", "error");
-            }
-        }
-
-        // --- SETTINGS UI ---
-        function openSettings() {
-            document.getElementById("cloudModal").style.display = "flex";
-            document.getElementById("inpGistId").value = gistId;
-            document.getElementById("inpToken").value = ghToken;
-        }
-        function closeSettings() {
-            document.getElementById("cloudModal").style.display = "none";
-        }
-        function saveSettings() {
-            gistId = document.getElementById("inpGistId").value.trim();
-            ghToken = document.getElementById("inpToken").value.trim();
-            localStorage.setItem("att_gist_id", gistId);
-            localStorage.setItem("att_gh_token", ghToken);
-            closeSettings();
-            loadFromCloud();
-        }
-    </script>
-</body>
-</html>
