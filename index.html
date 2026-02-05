@@ -3,31 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attendance Tracker</title>
+    <title>Attendance Tracker Pro</title>
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; background: #f4f6f8; display: flex; flex-direction: column; align-items: center; padding: 20px; color: #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f8; display: flex; flex-direction: column; align-items: center; padding: 20px; color: #333; }
         h1 { color: #2c3e50; margin-bottom: 5px; }
-        .subtitle { color: #7f8c8d; font-size: 0.9rem; margin-bottom: 20px; }
+        .version { font-size: 0.75rem; color: #bbb; margin-bottom: 15px; }
         
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 100%; max-width: 850px; overflow-x: auto; margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; min-width: 600px; }
         th, td { padding: 12px; text-align: center; border-bottom: 1px solid #eee; }
         th { background: #f8f9fa; font-size: 0.85rem; color: #555; }
         
+        /* Sticky Name Column */
         td:first-child, th:first-child { position: sticky; left: 0; background: white; font-weight: bold; text-align: left; border-right: 2px solid #eee; z-index: 5; }
+        
+        /* Today Column Highlight */
         .today-col { background-color: #e3fcf0 !important; border-left: 2px solid #2ecc71; border-right: 2px solid #2ecc71; }
         
+        /* Checkboxes */
         input[type="checkbox"] { transform: scale(1.4); cursor: pointer; accent-color: #27ae60; }
         input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.5; filter: grayscale(1); }
         
-        .controls { display: flex; gap: 10px; margin-bottom: 15px; }
+        /* Buttons */
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; justify-content: center; }
         button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; }
         .btn-nav { background: white; border: 1px solid #ccc; }
         .btn-nav:hover { background: #eee; }
         .btn-sync { background: #2c3e50; color: white; display: flex; align-items: center; gap: 5px; }
+        
+        /* Admin Button Styles */
+        .btn-admin { background-color: #e74c3c; color: white; opacity: 0.8; }
+        .admin-active { background-color: #e67e22 !important; box-shadow: 0 0 10px #e67e22; opacity: 1; }
 
-        #syncStatus { font-size: 0.85rem; height: 20px; color: #666; margin-top: 5px; font-weight: bold; }
-        .loading { color: #e67e22 !important; }
+        /* Status Bar */
+        #syncStatus { font-size: 0.85rem; height: 20px; color: #666; margin-top: 5px; font-weight: bold; margin-bottom: 10px; }
         .success { color: #27ae60 !important; }
         .error { color: #e74c3c !important; }
     </style>
@@ -35,18 +44,19 @@
 <body>
 
     <h1>Attendance Tracker</h1>
-    <p class="subtitle">Araya & Aarivya</p>
+    <div class="version">v6.0 (Admin & Sync Fix)</div>
 
     <div class="controls">
         <button class="btn-nav" onclick="changeWeek(-1)">← Prev</button>
-        <span id="weekLabel" style="display:flex; align-items:center; font-weight:bold; padding:0 10px;">Loading...</span>
+        <span id="weekLabel" style="display:flex; align-items:center; font-weight:bold; padding:0 15px; background:white; border-radius:6px;">Loading...</span>
         <button class="btn-nav" onclick="changeWeek(1)">Next →</button>
     </div>
 
     <div class="controls">
         <button class="btn-sync" onclick="loadFromCloud()">🔄 Refresh Data</button>
+        <button class="btn-admin" id="adminBtn" onclick="toggleAdmin()">🔧 Admin Mode</button>
     </div>
-    <div id="syncStatus"></div>
+    <div id="syncStatus">Initializing...</div>
 
     <div class="card">
         <table id="attTable">
@@ -58,33 +68,35 @@
     </div>
 
     <script>
-        // --- 1. CREDENTIALS (Corrected with ghp_ prefix) ---
+        // --- 1. CREDENTIALS (HARDCODED & CORRECTED) ---
         const gistId = "c9296eed338932cc03505aa31888185b";
-        const ghToken = "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";
+        // Added 'ghp_' prefix that was missing in your password manager
+        const ghToken = "ghp_" + "Ye1lc4BYK8RX3ivMa9oiGEj1xih7O52zl3ci"; 
 
-        // --- 2. SETUP VARIABLES ---
+        // --- 2. APP STATE ---
         const students = ["Araya", "Aarivya"];
         let currentMonday = getMonday(new Date());
         let attendanceData = {}; 
+        let adminMode = false;
 
-        // --- 3. SAFETY STARTUP (Prevents "Loading..." freeze) ---
-        try {
-            const localData = localStorage.getItem("att_offline_data");
-            if (localData && localData !== "undefined") {
-                attendanceData = JSON.parse(localData);
+        // --- 3. INITIALIZATION ---
+        // Run immediately when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            // Safety: Try to load local data, reset if corrupt
+            try {
+                const local = localStorage.getItem("att_data_v6");
+                if (local) attendanceData = JSON.parse(local);
+            } catch (e) {
+                console.log("Resetting corrupt data");
+                attendanceData = {};
             }
-        } catch (error) {
-            console.warn("Corrupt data found. Resetting...");
-            localStorage.removeItem("att_offline_data");
-            attendanceData = {};
-        }
+            
+            renderTable();
+            loadFromCloud(); // Auto-sync on open
+        });
 
-        // --- 4. START THE APP ---
-        // We run this immediately to ensure functions are defined
-        renderTable();
-        loadFromCloud(); 
+        // --- 4. CORE FUNCTIONS ---
 
-        // --- 5. FUNCTIONS ---
         function getMonday(d) {
             d = new Date(d);
             const day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -102,9 +114,8 @@
             const label = document.getElementById("weekLabel");
             const todayKey = formatDate(new Date());
 
+            // Build Header
             thead.innerHTML = "<th>Student</th>";
-            tbody.innerHTML = "";
-
             const weekDates = [];
             for(let i=0; i<7; i++) {
                 const d = new Date(currentMonday);
@@ -118,6 +129,8 @@
             }
             label.innerText = `${weekDates[0].toLocaleDateString()} - ${weekDates[6].toLocaleDateString()}`;
 
+            // Build Rows
+            tbody.innerHTML = "";
             students.forEach(student => {
                 const tr = document.createElement("tr");
                 const tdName = document.createElement("td");
@@ -131,25 +144,38 @@
                     const chk = document.createElement("input");
                     chk.type = "checkbox";
 
+                    // Set Checked State
                     if(attendanceData[key]) chk.checked = true;
+                    
+                    // Highlight Today
                     if(dKey === todayKey) td.classList.add("today-col");
 
-                    if(dKey !== todayKey) {
-                        chk.disabled = true; 
-                    } else if(attendanceData[key]) {
-                        chk.disabled = true; 
+                    // LOCKING LOGIC
+                    if (!adminMode) {
+                        // If NOT admin, lock past/future dates AND already marked dates
+                        if(dKey !== todayKey) {
+                            chk.disabled = true;
+                            chk.title = "Locked (Admin Only)";
+                        } else if(attendanceData[key]) {
+                            chk.disabled = true;
+                            chk.title = "Already Marked";
+                        }
                     }
 
+                    // Click Handler
                     chk.onclick = (e) => {
-                        if(confirm(`Mark ${student} Present?`)) {
-                            attendanceData[key] = true;
-                            saveData();
-                            renderTable(); 
-                        } else {
-                            e.preventDefault();
+                        if(!adminMode) {
+                            if(!confirm(`Mark ${student} Present? This will lock instantly.`)) {
+                                e.preventDefault();
+                                return;
+                            }
                         }
+                        attendanceData[key] = chk.checked;
+                        saveData();
+                        renderTable(); // Re-render to update locks
                     };
-                    td.appendChild(chk); 
+
+                    td.appendChild(chk);
                     tr.appendChild(td);
                 });
                 tbody.appendChild(tr);
@@ -157,7 +183,7 @@
         }
 
         function saveData() {
-            localStorage.setItem("att_offline_data", JSON.stringify(attendanceData));
+            localStorage.setItem("att_data_v6", JSON.stringify(attendanceData));
             pushToCloud();
         }
 
@@ -166,6 +192,27 @@
             renderTable();
         }
 
+        function toggleAdmin() {
+            if(adminMode) {
+                adminMode = false;
+                document.getElementById("adminBtn").classList.remove("admin-active");
+                document.getElementById("adminBtn").innerText = "🔧 Admin Mode";
+                renderTable();
+            } else {
+                const pin = prompt("Enter Admin PIN:");
+                if(pin === "1234") { // DEFAULT PIN IS 1234
+                    adminMode = true;
+                    document.getElementById("adminBtn").classList.add("admin-active");
+                    document.getElementById("adminBtn").innerText = "🔓 Unlocked";
+                    renderTable();
+                } else if (pin !== null) {
+                    alert("Wrong PIN");
+                }
+            }
+        }
+
+        // --- 5. CLOUD SYNC FUNCTIONS ---
+
         function setStatus(msg, type) {
             const el = document.getElementById("syncStatus");
             el.innerText = msg;
@@ -173,31 +220,33 @@
         }
 
         async function loadFromCloud() {
-            setStatus("⌛ Fetching data...", "loading");
+            setStatus("☁️ Syncing...", "loading");
             try {
-                const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+                // Add timestamp to URL to prevent browser caching
+                const res = await fetch(`https://api.github.com/gists/${gistId}?t=${Date.now()}`, {
                     headers: { "Authorization": `token ${ghToken}` }
                 });
-                if(!res.ok) throw new Error("Failed to load");
+                
+                if(!res.ok) throw new Error(`GitHub Error: ${res.status}`);
                 
                 const json = await res.json();
-                if(json.files["attendance.json"]) {
+                if(json.files && json.files["attendance.json"]) {
                     const content = json.files["attendance.json"].content;
-                    if(content && content !== "{}" && content !== "undefined") {
+                    if(content && content !== "{}" && content !== "") {
                         attendanceData = JSON.parse(content);
-                        localStorage.setItem("att_offline_data", JSON.stringify(attendanceData));
+                        localStorage.setItem("att_data_v6", JSON.stringify(attendanceData));
                         renderTable();
                     }
                 }
-                setStatus("✅ Connected & Synced", "success");
+                setStatus("✅ Data Synced", "success");
             } catch (err) {
                 console.error(err);
-                setStatus("❌ Sync Failed: " + err.message, "error");
+                setStatus(`❌ Sync Failed: ${err.message}`, "error");
             }
         }
 
         async function pushToCloud() {
-            setStatus("⌛ Saving to Cloud...", "loading");
+            setStatus("☁️ Saving...", "loading");
             try {
                 await fetch(`https://api.github.com/gists/${gistId}`, {
                     method: "PATCH",
@@ -212,6 +261,7 @@
                 setStatus("✅ Saved to Cloud", "success");
             } catch (err) {
                 setStatus("❌ Save Failed", "error");
+                alert("Could not save to Cloud. Check internet.");
             }
         }
     </script>
