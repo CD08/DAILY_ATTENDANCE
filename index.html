@@ -3,25 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attendance: Araya & Aarivya</title>
+    <title>Attendance Tracker</title>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; background: #f4f6f8; display: flex; flex-direction: column; align-items: center; padding: 20px; color: #333; }
         h1 { color: #2c3e50; margin-bottom: 5px; }
         .subtitle { color: #7f8c8d; font-size: 0.9rem; margin-bottom: 20px; }
         
-        /* Layout */
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 100%; max-width: 850px; overflow-x: auto; margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; min-width: 600px; }
         th, td { padding: 12px; text-align: center; border-bottom: 1px solid #eee; }
         th { background: #f8f9fa; font-size: 0.85rem; color: #555; }
         
-        /* Sticky Name Column */
         td:first-child, th:first-child { position: sticky; left: 0; background: white; font-weight: bold; text-align: left; border-right: 2px solid #eee; z-index: 5; }
-
-        /* Today Column Highlight */
         .today-col { background-color: #e3fcf0 !important; border-left: 2px solid #2ecc71; border-right: 2px solid #2ecc71; }
         
-        /* Inputs & Buttons */
         input[type="checkbox"] { transform: scale(1.4); cursor: pointer; accent-color: #27ae60; }
         input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.5; filter: grayscale(1); }
         
@@ -31,7 +26,6 @@
         .btn-nav:hover { background: #eee; }
         .btn-sync { background: #2c3e50; color: white; display: flex; align-items: center; gap: 5px; }
 
-        /* Status Bar */
         #syncStatus { font-size: 0.85rem; height: 20px; color: #666; margin-top: 5px; font-weight: bold; }
         .loading { color: #e67e22 !important; }
         .success { color: #27ae60 !important; }
@@ -50,3 +44,34 @@
     </div>
 
     <div class="controls">
+        <button class="btn-sync" onclick="loadFromCloud()">🔄 Refresh Data</button>
+    </div>
+    <div id="syncStatus"></div>
+
+    <div class="card">
+        <table id="attTable">
+            <thead>
+                <tr id="tHead"><th>Student</th></tr>
+            </thead>
+            <tbody id="tBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // --- 1. CREDENTIALS (Corrected with ghp_ prefix) ---
+        const gistId = "c9296eed338932cc03505aa31888185b";
+        const ghToken = "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";
+
+        // --- 2. SETUP VARIABLES ---
+        const students = ["Araya", "Aarivya"];
+        let currentMonday = getMonday(new Date());
+        let attendanceData = {}; 
+
+        // --- 3. SAFETY STARTUP (Prevents "Loading..." freeze) ---
+        try {
+            const localData = localStorage.getItem("att_offline_data");
+            if (localData && localData !== "undefined") {
+                attendanceData = JSON.parse(localData);
+            }
+        } catch (error) {
+            console.warn("Corrupt data
