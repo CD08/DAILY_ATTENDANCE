@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Attendance: Araya & Aarivya</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px;
+            color: #333;
+        }
+
+        h1 { margin-bottom: 5px; color: #1a252f; }
+        p.subtitle { color: #e74c3c; margin-bottom: 25px; font-weight: bold; font-size: 0.9rem; }
+
+        /* Navigation Bar */
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            background: white;
+            padding: 10px 20px;
+            border-radius: 50px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .nav-btn {
+            background: none;
+            border: 1px solid #ddd;
+            padding: 5px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        .nav-btn:hover { background: #eee; }
+
+        #currentWeekLabel {
+            font-weight: bold;
+            font-size: 1.1rem;
+            min-width: 200px;
+            text-align: center;
+        }
+
+        /* Card & Table */
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            width: 100%;
+            max-width: 900px;
+            overflow-x: auto;
+        }
+
+        table { width: 100%; border-collapse: collapse; min-width: 700px; }
+        th, td { padding: 15px; text-align: center; border-bottom: 1px solid #f1f1f1; }
+        
+        th { background-color: #f8f9fa; color: #555; font-size: 0.9rem; }
+        
+        /* Fixed Name Column */
+        td:first-child, th:first-child {
+            text-align: left;
+            font-weight: bold;
+            color: #2c3e50;
+            background-color: white;
+            position: sticky;
+            left: 0;
+            border-right: 2px solid #f1f1f1;
+            z-index: 10;
+        }
+
+        /* Checkbox Styling & Locking */
+        input[type="checkbox"] {
+            width: 20px; height: 20px;
+            accent-color: #27ae60;
+            cursor: pointer;
+        }
+
+        /* Visual style for locked/disabled checkboxes */
+        input[type="checkbox"]:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+            filter: grayscale(100%);
+        }
+
+        /* Highlight Today's Column */
+        .today-column {
+            background-color: #e8f8f5; /* Light Green Tint */
+            border-left: 2px solid #27ae60;
+            border-right: 2px solid #27ae60;
+        }
+        th.today-column {
+            color: #27ae60;
+            font-weight: 800;
+        }
+
+        /* Report Buttons */
+        .report-section {
+            margin-top: 30px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .btn-report {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.1s;
+        }
+        
+        .btn-weekly { background-color: #3498db; }
+        .btn-monthly { background-color: #8e44ad; }
+        .btn-report:active { transform: scale(0.98); }
+
+    </style>
+</head>
+<body>
+
+    <h1>Attendance Tracker</h1>
+    <p class="subtitle">🔒 Security Active: Only today's date can be modified.</p>
+
+    <div class="nav-controls">
+        <button class="nav-btn" onclick="changeWeek(-1)">← Prev</button>
+        <span id="currentWeekLabel">Loading...</span>
+        <button class="nav-btn" onclick="changeWeek(1)">Next →</button>
+    </div>
+
+    <div class="card">
+        <table id="attendanceTable">
+            <thead>
+                <tr id="tableHeaders">
+                    <th>Student Name</th>
+                    </tr>
+            </thead>
+            <tbody id="tableBody">
+                </tbody>
+        </table>
+    </div>
+
+    <div class="report-section">
+        <button class="btn-report btn-weekly" onclick="downloadWeeklyReport()">Download Weekly CSV</button>
+        <button class="btn-report btn-monthly" onclick="downloadMonthlyReport()">Download Monthly CSV</button>
+    </div>
+
+    <script>
+        const students = ["Araya", "Aarivya"];
+        let currentMonday = getMonday(new Date()); 
+        
+        // Get strict "Today" string for locking logic
+        const todayStrict = new Date();
+        const todayKeyString = formatDateKey(todayStrict);
+
+        function getMonday(d) {
+            d = new Date(d);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1); 
+            return new Date(d.setDate(diff));
+        }
+
+        function formatDateKey(date) {
+            const offset = date.getTimezoneOffset();
+            const adjustedDate = new Date(date.getTime() - (offset*60*1000));
+            return adjustedDate.toISOString().split('T')[0];
+        }
+
+        function formatDisplayDate(date) {
+            const options = { weekday: 'short', month: 'numeric', day: 'numeric' };
+            return date.toLocaleDateString('en-US', options);
+        }
+
+        // --- CORE RENDER FUNCTION ---
+        function renderTable() {
+            const headerRow = document.getElementById("tableHeaders");
+            const tbody = document.getElementById("tableBody");
+            const label = document.getElementById("currentWeekLabel");
+
+            headerRow.innerHTML = "<th>Student Name</th>";
+            tbody.innerHTML = "";
+
+            const weekDates = [];
+            // Generate Header Row
+            for (let i = 0; i < 7; i++) {
+                const day = new Date(currentMonday);
+                day.setDate(currentMonday.getDate() + i);
+                weekDates.push(day);
+                
+                const th = document.createElement("th");
+                th.textContent = formatDisplayDate(day);
+                
+                // Highlight visual style if it is today
+                if (formatDateKey(day) === todayKeyString) {
+                    th.classList.add("today-column");
+                    th.textContent += " (Today)";
+                }
+                
+                headerRow.appendChild(th);
+            }
+
+            const startStr = weekDates[0].toLocaleDateString();
+            const endStr = weekDates[6].toLocaleDateString();
+            label.textContent = `${startStr} - ${endStr}`;
+
+            // Generate Student Rows
+            students.forEach(student => {
+                const row = document.createElement("tr");
+                const nameCell = document.createElement("td");
+                nameCell.textContent = student;
+                row.appendChild(nameCell);
+
+                weekDates.forEach(date => {
+                    const cell = document.createElement("td");
+                    const checkbox = document.createElement("input");
+                    checkbox.type = "checkbox";
+                    
+                    const dateKey = formatDateKey(date);
+                    const storageKey = `${student}-${dateKey}`;
+                    const isMarked = localStorage.getItem(storageKey) === "true";
+                    
+                    // 1. Set Checked State
+                    if (isMarked) {
+                        checkbox.checked = true;
+                    }
+
+                    // 2. Add "Today" highlighting
+                    if (dateKey === todayKeyString) {
+                        cell.classList.add("today-column");
+                    }
+
+                    // 3. SECURITY LOCK LOGIC
+                    // Lock if: Date is NOT today OR Date is today but already marked
+                    if (dateKey !== todayKeyString) {
+                        checkbox.disabled = true; // Lock past/future
+                        checkbox.title = "Modification disabled for other dates";
+                    } else if (isMarked) {
+                        checkbox.disabled = true; // Lock today if already done
+                        checkbox.title = "Attendance already confirmed";
+                    }
+
+                    // 4. Click Event with Confirmation
+                    checkbox.addEventListener("click", (e) => {
+                        // If it's disabled, click won't trigger anyway, but double check date
+                        if (dateKey !== todayKeyString) {
+                            e.preventDefault();
+                            return;
+                        }
+
+                        // Confirmation Prompt
+                        const confirmMsg = `Are you sure you want to mark ${student} as PRESENT for Today?\n\nThis cannot be undone.`;
+                        
+                        if (confirm(confirmMsg)) {
+                            // User said YES
+                            localStorage.setItem(storageKey, "true");
+                            e.target.disabled = true; // Lock immediately
+                        } else {
+                            // User said NO - Cancel the check
+                            e.preventDefault();
+                        }
+                    });
+
+                    cell.appendChild(checkbox);
+                    row.appendChild(cell);
+                });
+
+                tbody.appendChild(row);
+            });
+        }
+
+        function changeWeek(direction) {
+            currentMonday.setDate(currentMonday.getDate() + (direction * 7));
+            renderTable();
+        }
+
+        // --- EXPORT LOGIC (Columns: Date | Araya | Aarivya) ---
+        function downloadWeeklyReport() {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "DATE,ARAYA,AARIVYA\n";
+
+            for (let i = 0; i < 7; i++) {
+                let day = new Date(currentMonday);
+                day.setDate(currentMonday.getDate() + i);
+                let dateKey = formatDateKey(day);
+                let row = [dateKey];
+
+                students.forEach(student => {
+                    let key = `${student}-${dateKey}`;
+                    let isPresent = localStorage.getItem(key) === "true";
+                    row.push(isPresent ? "Present" : "Absent");
+                });
+
+                csvContent += row.join(",") + "\n";
+            }
+            downloadCSV(`Weekly_Log_${formatDateKey(currentMonday)}.csv`, csvContent);
+        }
+
+        function downloadMonthlyReport() {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "DATE,ARAYA,AARIVYA\n";
+
+            const currentMonth = currentMonday.getMonth();
+            const currentYear = currentMonday.getFullYear();
+            const monthName = currentMonday.toLocaleString('default', { month: 'long' });
+
+            for (let d = 1; d <= 31; d++) {
+                let testDate = new Date(currentYear, currentMonth, d);
+                if (testDate.getMonth() !== currentMonth) break;
+
+                let dateKey = formatDateKey(testDate);
+                let row = [dateKey];
+
+                students.forEach(student => {
+                    let key = `${student}-${dateKey}`;
+                    let isPresent = localStorage.getItem(key) === "true";
+                    row.push(isPresent ? "Present" : "Absent");
+                });
+
+                csvContent += row.join(",") + "\n";
+            }
+            downloadCSV(`Monthly_Log_${monthName}.csv`, csvContent);
+        }
+
+        function downloadCSV(filename, content) {
+            const encodedUri = encodeURI(content);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        renderTable();
+    </script>
+</body>
+</html>
