@@ -74,4 +74,146 @@
                 attendanceData = JSON.parse(localData);
             }
         } catch (error) {
-            console.warn("Corrupt data
+            console.warn("Corrupt data found. Resetting...");
+            localStorage.removeItem("att_offline_data");
+            attendanceData = {};
+        }
+
+        // --- 4. START THE APP ---
+        // We run this immediately to ensure functions are defined
+        renderTable();
+        loadFromCloud(); 
+
+        // --- 5. FUNCTIONS ---
+        function getMonday(d) {
+            d = new Date(d);
+            const day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(d.setDate(diff));
+        }
+
+        function formatDate(date) {
+            const offset = date.getTimezoneOffset();
+            return new Date(date.getTime() - (offset*60*1000)).toISOString().split('T')[0];
+        }
+
+        function renderTable() {
+            const thead = document.getElementById("tHead");
+            const tbody = document.getElementById("tBody");
+            const label = document.getElementById("weekLabel");
+            const todayKey = formatDate(new Date());
+
+            thead.innerHTML = "<th>Student</th>";
+            tbody.innerHTML = "";
+
+            const weekDates = [];
+            for(let i=0; i<7; i++) {
+                const d = new Date(currentMonday);
+                d.setDate(currentMonday.getDate() + i);
+                weekDates.push(d);
+                
+                const th = document.createElement("th");
+                th.innerText = d.toLocaleDateString('en-US', {weekday:'short', day:'numeric'});
+                if(formatDate(d) === todayKey) th.classList.add("today-col");
+                thead.appendChild(th);
+            }
+            label.innerText = `${weekDates[0].toLocaleDateString()} - ${weekDates[6].toLocaleDateString()}`;
+
+            students.forEach(student => {
+                const tr = document.createElement("tr");
+                const tdName = document.createElement("td");
+                tdName.innerText = student;
+                tr.appendChild(tdName);
+
+                weekDates.forEach(date => {
+                    const td = document.createElement("td");
+                    const dKey = formatDate(date);
+                    const key = `${student}-${dKey}`;
+                    const chk = document.createElement("input");
+                    chk.type = "checkbox";
+
+                    if(attendanceData[key]) chk.checked = true;
+                    if(dKey === todayKey) td.classList.add("today-col");
+
+                    if(dKey !== todayKey) {
+                        chk.disabled = true; 
+                    } else if(attendanceData[key]) {
+                        chk.disabled = true; 
+                    }
+
+                    chk.onclick = (e) => {
+                        if(confirm(`Mark ${student} Present?`)) {
+                            attendanceData[key] = true;
+                            saveData();
+                            renderTable(); 
+                        } else {
+                            e.preventDefault();
+                        }
+                    };
+                    td.appendChild(chk); 
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+
+        function saveData() {
+            localStorage.setItem("att_offline_data", JSON.stringify(attendanceData));
+            pushToCloud();
+        }
+
+        function changeWeek(dir) {
+            currentMonday.setDate(currentMonday.getDate() + (dir*7));
+            renderTable();
+        }
+
+        function setStatus(msg, type) {
+            const el = document.getElementById("syncStatus");
+            el.innerText = msg;
+            el.className = type || "";
+        }
+
+        async function loadFromCloud() {
+            setStatus("⌛ Fetching data...", "loading");
+            try {
+                const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+                    headers: { "Authorization": `token ${ghToken}` }
+                });
+                if(!res.ok) throw new Error("Failed to load");
+                
+                const json = await res.json();
+                if(json.files["attendance.json"]) {
+                    const content = json.files["attendance.json"].content;
+                    if(content && content !== "{}" && content !== "undefined") {
+                        attendanceData = JSON.parse(content);
+                        localStorage.setItem("att_offline_data", JSON.stringify(attendanceData));
+                        renderTable();
+                    }
+                }
+                setStatus("✅ Connected & Synced", "success");
+            } catch (err) {
+                console.error(err);
+                setStatus("❌ Sync Failed: " + err.message, "error");
+            }
+        }
+
+        async function pushToCloud() {
+            setStatus("⌛ Saving to Cloud...", "loading");
+            try {
+                await fetch(`https://api.github.com/gists/${gistId}`, {
+                    method: "PATCH",
+                    headers: { 
+                        "Authorization": `token ${ghToken}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        files: { "attendance.json": { content: JSON.stringify(attendanceData) } }
+                    })
+                });
+                setStatus("✅ Saved to Cloud", "success");
+            } catch (err) {
+                setStatus("❌ Save Failed", "error");
+            }
+        }
+    </script>
+</body>
+</html>
