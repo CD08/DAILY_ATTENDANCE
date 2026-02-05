@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Attendance: Araya & Aarivya</title>
+    <title>Attendance: Araya & Aarivya</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -64,7 +64,6 @@
         
         th { background-color: #f8f9fa; color: #555; font-size: 0.9rem; }
         
-        /* Fixed Name Column */
         td:first-child, th:first-child {
             text-align: left;
             font-weight: bold;
@@ -76,23 +75,20 @@
             z-index: 10;
         }
 
-        /* Checkbox Styling & Locking */
         input[type="checkbox"] {
             width: 20px; height: 20px;
             accent-color: #27ae60;
             cursor: pointer;
         }
 
-        /* Visual style for locked/disabled checkboxes */
         input[type="checkbox"]:disabled {
             cursor: not-allowed;
             opacity: 0.6;
             filter: grayscale(100%);
         }
 
-        /* Highlight Today's Column */
         .today-column {
-            background-color: #e8f8f5; /* Light Green Tint */
+            background-color: #e8f8f5;
             border-left: 2px solid #27ae60;
             border-right: 2px solid #27ae60;
         }
@@ -101,11 +97,12 @@
             font-weight: 800;
         }
 
-        /* Report Buttons */
         .report-section {
             margin-top: 30px;
             display: flex;
             gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
         }
 
         .btn-report {
@@ -116,19 +113,33 @@
             cursor: pointer;
             color: white;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            transition: transform 0.1s;
         }
         
         .btn-weekly { background-color: #3498db; }
         .btn-monthly { background-color: #8e44ad; }
-        .btn-report:active { transform: scale(0.98); }
+        
+        /* Admin Button */
+        .btn-admin { 
+            background-color: #34495e; 
+            margin-left: 20px;
+        }
+        .admin-active {
+            background-color: #e67e22 !important;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(230, 126, 34, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0); }
+        }
 
     </style>
 </head>
 <body>
 
     <h1>Attendance Tracker</h1>
-    <p class="subtitle">🔒 Security Active: Only today's date can be modified.</p>
+    <p class="subtitle" id="statusText">🔒 Security Active: Only today's date can be modified.</p>
 
     <div class="nav-controls">
         <button class="nav-btn" onclick="changeWeek(-1)">← Prev</button>
@@ -141,23 +152,23 @@
             <thead>
                 <tr id="tableHeaders">
                     <th>Student Name</th>
-                    </tr>
+                </tr>
             </thead>
-            <tbody id="tableBody">
-                </tbody>
+            <tbody id="tableBody"></tbody>
         </table>
     </div>
 
     <div class="report-section">
         <button class="btn-report btn-weekly" onclick="downloadWeeklyReport()">Download Weekly CSV</button>
         <button class="btn-report btn-monthly" onclick="downloadMonthlyReport()">Download Monthly CSV</button>
+        <button class="btn-report btn-admin" id="adminBtn" onclick="toggleAdminMode()">🔧 Admin Edit</button>
     </div>
 
     <script>
         const students = ["Araya", "Aarivya"];
         let currentMonday = getMonday(new Date()); 
+        let adminMode = false;
         
-        // Get strict "Today" string for locking logic
         const todayStrict = new Date();
         const todayKeyString = formatDateKey(todayStrict);
 
@@ -179,7 +190,6 @@
             return date.toLocaleDateString('en-US', options);
         }
 
-        // --- CORE RENDER FUNCTION ---
         function renderTable() {
             const headerRow = document.getElementById("tableHeaders");
             const tbody = document.getElementById("tableBody");
@@ -189,7 +199,7 @@
             tbody.innerHTML = "";
 
             const weekDates = [];
-            // Generate Header Row
+            
             for (let i = 0; i < 7; i++) {
                 const day = new Date(currentMonday);
                 day.setDate(currentMonday.getDate() + i);
@@ -198,7 +208,6 @@
                 const th = document.createElement("th");
                 th.textContent = formatDisplayDate(day);
                 
-                // Highlight visual style if it is today
                 if (formatDateKey(day) === todayKeyString) {
                     th.classList.add("today-column");
                     th.textContent += " (Today)";
@@ -211,7 +220,6 @@
             const endStr = weekDates[6].toLocaleDateString();
             label.textContent = `${startStr} - ${endStr}`;
 
-            // Generate Student Rows
             students.forEach(student => {
                 const row = document.createElement("tr");
                 const nameCell = document.createElement("td");
@@ -227,43 +235,40 @@
                     const storageKey = `${student}-${dateKey}`;
                     const isMarked = localStorage.getItem(storageKey) === "true";
                     
-                    // 1. Set Checked State
-                    if (isMarked) {
-                        checkbox.checked = true;
+                    if (isMarked) checkbox.checked = true;
+
+                    if (dateKey === todayKeyString) cell.classList.add("today-column");
+
+                    // LOCK LOGIC:
+                    // If Admin Mode is OFF, apply strict locking
+                    if (!adminMode) {
+                        if (dateKey !== todayKeyString) {
+                            checkbox.disabled = true;
+                            checkbox.title = "Modification disabled for other dates";
+                        } else if (isMarked) {
+                            checkbox.disabled = true;
+                            checkbox.title = "Attendance already confirmed";
+                        }
                     }
 
-                    // 2. Add "Today" highlighting
-                    if (dateKey === todayKeyString) {
-                        cell.classList.add("today-column");
-                    }
-
-                    // 3. SECURITY LOCK LOGIC
-                    // Lock if: Date is NOT today OR Date is today but already marked
-                    if (dateKey !== todayKeyString) {
-                        checkbox.disabled = true; // Lock past/future
-                        checkbox.title = "Modification disabled for other dates";
-                    } else if (isMarked) {
-                        checkbox.disabled = true; // Lock today if already done
-                        checkbox.title = "Attendance already confirmed";
-                    }
-
-                    // 4. Click Event with Confirmation
                     checkbox.addEventListener("click", (e) => {
-                        // If it's disabled, click won't trigger anyway, but double check date
+                        // If Admin Mode is ON, skip confirmation and just save
+                        if (adminMode) {
+                            localStorage.setItem(storageKey, e.target.checked);
+                            return; 
+                        }
+
+                        // Normal User Logic (Strict)
                         if (dateKey !== todayKeyString) {
                             e.preventDefault();
                             return;
                         }
 
-                        // Confirmation Prompt
                         const confirmMsg = `Are you sure you want to mark ${student} as PRESENT for Today?\n\nThis cannot be undone.`;
-                        
                         if (confirm(confirmMsg)) {
-                            // User said YES
                             localStorage.setItem(storageKey, "true");
-                            e.target.disabled = true; // Lock immediately
+                            e.target.disabled = true; 
                         } else {
-                            // User said NO - Cancel the check
                             e.preventDefault();
                         }
                     });
@@ -281,7 +286,32 @@
             renderTable();
         }
 
-        // --- EXPORT LOGIC (Columns: Date | Araya | Aarivya) ---
+        // --- ADMIN FUNCTION ---
+        function toggleAdminMode() {
+            if (adminMode) {
+                // Turn OFF
+                adminMode = false;
+                document.getElementById("statusText").textContent = "🔒 Security Active: Only today's date can be modified.";
+                document.getElementById("statusText").style.color = "#e74c3c";
+                document.getElementById("adminBtn").classList.remove("admin-active");
+                document.getElementById("adminBtn").textContent = "🔧 Admin Edit";
+                renderTable();
+            } else {
+                // Turn ON
+                const pin = prompt("Enter Admin PIN to unlock all dates:");
+                if (pin === "0708") { // DEFAULT PIN IS 1234
+                    adminMode = true;
+                    document.getElementById("statusText").textContent = "🔓 ADMIN MODE: You can modify past and future dates.";
+                    document.getElementById("statusText").style.color = "#e67e22";
+                    document.getElementById("adminBtn").classList.add("admin-active");
+                    document.getElementById("adminBtn").textContent = "🔓 Exit Admin";
+                    renderTable();
+                } else {
+                    alert("Incorrect PIN");
+                }
+            }
+        }
+
         function downloadWeeklyReport() {
             let csvContent = "data:text/csv;charset=utf-8,";
             csvContent += "DATE,ARAYA,AARIVYA\n";
